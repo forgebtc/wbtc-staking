@@ -27,8 +27,14 @@ interface IWBTCStakingActions {
     function withdraw() external;
 
     /**
-     * @dev Allows to change reward rate (100% = 10**18).
-     * @param newRate uint256 rate.
+     * @dev Allows to propose changing reward rate (100% = 10**18).
+     * @param newRate_ uint256 rate.
      */
-    function setRate(uint256 newRate) external;
+    function proposeRate(uint256 newRate_) external;
+
+
+    /**
+     * @dev Allow to apply proposed rate
+     */
+    function setRate() external;
 }

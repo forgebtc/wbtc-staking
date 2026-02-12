@@ -20,5 +20,6 @@ generated-types
 
 # Hardhat coverage reports
 /coverage
+coverage.json
 
 .env

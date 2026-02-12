@@ -5,5 +5,6 @@ interface IWBTCStakingEvents {
     event Staked(uint256 amount, address user);
     event Erc20Recovered(uint256 amount, address token);
     event Claimed(uint256 amount, address user);
+    event RewardRateProposed(uint256 newRate);
     event RewardRateUpdated(uint256 newRate);
 }

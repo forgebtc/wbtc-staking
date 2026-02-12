@@ -10,4 +10,9 @@ interface IWBTCStakingErrors {
     error ZeroAmountErr();
     error NothingToClaimErr();
     error NothingToWithdrawErr();
+    error SupplyNotEnoughErr();
+    error GreaterThanMaxPercentageErr();
+    error LowerThanMinPercentageErr();
+    error TimelockNotPassedErr();
+    error SameRatesErr();
 }

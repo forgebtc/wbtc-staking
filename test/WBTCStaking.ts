@@ -4,7 +4,6 @@ import { ZeroAddress } from 'ethers';
 import { Reverter } from './helpers/reverter';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { WBTCStaking, ERC20Mock, WBTCStaking__factory } from '../typechain-types';
-import { ERC20MockReentrant } from '../typechain-types/contracts/mockups/ERC20MockReentrant.sol';
 
 async function timeTravel(timestamp: number) {
     await ethers.provider.send("evm_setNextBlockTimestamp", [timestamp])
@@ -137,7 +136,7 @@ describe.only("WBTCStaking", () => {
             await staking.stake(firstAmount);
             await staking.connect(SECOND).stake(secondAmount);
 
-            await wbtc.transfer(staking.target, 100n * 10n ** 8n)
+            await staking.addSupply(100n * 10n ** 8n);
         });
 
         it("should correctly claim", async () => {
@@ -204,7 +203,7 @@ describe.only("WBTCStaking", () => {
             await staking.stake(firstAmount);
             await staking.connect(SECOND).stake(secondAmount);
 
-            await wbtc.transfer(staking.target, 100n * 10n ** 8n)
+            await staking.addSupply(100n * 10n ** 8n);
         });
 
         it("should correctly withdraw", async () => {
@@ -260,19 +259,63 @@ describe.only("WBTCStaking", () => {
         });
     });
 
+    describe("#proposeRate", () => {
+        it("should propose rate", async () => {
+            const newRate = 80n * 10n ** 16n;
+
+            const time = (await ethers.provider.getBlock('latest')).timestamp;
+            await staking.proposeRate(newRate);
+
+            expect(await staking.proposalTime()).to.be.eq(time+1); // 1 sec for await tx
+            expect(await staking.proposedRate()).to.be.eq(newRate);
+        });
+
+        it("should revert if current rate equals newRate", async () => {
+            const rate = await staking.rate();
+
+            await expect(staking.proposeRate(rate)).to.be.revertedWithCustomError(staking, "SameRatesErr");
+        });
+
+        it("should revert if out of rate bounds", async () => {
+            await expect(staking.proposeRate(10n**14n)).to.be.revertedWithCustomError(staking, "LowerThanMinPercentageErr");
+            await expect(staking.proposeRate(10n**27n)).to.be.revertedWithCustomError(staking, "GreaterThanMaxPercentageErr");
+        });
+
+        it("should revert if not owner", async () => {
+            await expect(staking.connect(SECOND).proposeRate(10n**16n)).to.be.revertedWithCustomError(staking, "OwnableUnauthorizedAccount");
+        });
+    });
+
     describe("#setRate", () => {
+        const newRate = 80n * 10n ** 16n;
+
+        beforeEach(async () => {
+            await staking.proposeRate(newRate);
+        });
+
         it("should set", async() => {
-            const newRate = 80n * 10n ** 16n
+            let blockTimestamp = (await ethers.provider.getBlock('latest')).timestamp;
+            await timeTravel(blockTimestamp + 60*60*24);
             
-            await staking.setRate(newRate);
+            await staking.setRate();
 
             expect(await staking.rate()).to.be.eq(newRate);
         });
 
         it("should revert if not owner", async () => {
-            const newRate = 80n * 10n ** 16n
-            
-            await expect(staking.connect(SECOND).setRate(newRate)).to.be.revertedWithCustomError(staking, "OwnableUnauthorizedAccount");
+            await expect(staking.connect(SECOND).setRate()).to.be.revertedWithCustomError(staking, "OwnableUnauthorizedAccount");
+        });
+
+        it("should revert if timelock not passed", async () => {
+            await expect(staking.setRate()).to.be.revertedWithCustomError(staking, "TimelockNotPassedErr");
+        });
+
+        it("should revert if same rates", async () => {
+            let blockTimestamp = (await ethers.provider.getBlock('latest')).timestamp;
+            await timeTravel(blockTimestamp + 60*60*24);
+
+            await staking.setRate();
+            await expect(staking.setRate()).to.be.revertedWithCustomError(staking, "SameRatesErr");
         });
     })
 
@@ -281,5 +324,41 @@ describe.only("WBTCStaking", () => {
             let addedValue = await staking.getAddedValue(OWNER.address);
             expect(addedValue).to.be.eq(0n);
         })
+    });
+
+    describe("#recoverERC20", async () => {
+        it("should correctly recover", async () => {
+            await timeTravel(startTimestamp+1);
+            await staking.connect(SECOND).stake(7n * 10n**8n);
+
+            const amount = 50n * 10n**8n;
+            await wbtc.transfer(staking.target, amount);
+
+            const balanceBefore = await wbtc.balanceOf(OWNER.address);
+            await staking.recoverERC20();
+            const balanceAfter = await wbtc.balanceOf(OWNER.address);
+
+            expect(balanceAfter - balanceBefore).to.be.eq(amount);
+        });
+
+        it("should revert if not owner", async () => {
+            await expect(staking.connect(SECOND).recoverERC20()).to.be.revertedWithCustomError(staking, "OwnableUnauthorizedAccount");
+        });
+    });
+
+    describe("#addSupply", () => {
+        it("should add supply", async () => {
+            const balanceBefore = await wbtc.balanceOf(staking.target);
+            const totalSupply = await staking.totalSupply();
+
+            await staking.addSupply(10n ** 9n);
+
+            expect(await staking.totalSupply()).to.be.eq(totalSupply + 10n ** 9n);
+            expect(await wbtc.balanceOf(staking.target)).to.be.eq(balanceBefore + 10n ** 9n);
+        });
+
+        it("should revert if not owner", async () => {
+            await expect(staking.connect(SECOND).addSupply(10n**9n)).to.be.revertedWithCustomError(staking, "OwnableUnauthorizedAccount");
+        });
     });
 });
