@@ -12,8 +12,8 @@ import "./interfaces/IWBTCStaking.sol";
 contract WBTCStaking is Ownable, ReentrancyGuard, IWBTCStaking {
     using SafeERC20 for IERC20;
 
-    uint256 public constant PRECISION = 10 ** 18; // 100%
-    uint256 public constant MIN_PRECENTAGE = PRECISION / 1000;
+    uint256 public constant MAX_PERCENTAGE = 10 ** 18; // 100%
+    uint256 public constant MIN_PERCENTAGE = MAX_PERCENTAGE / 1000;
 
     uint256 public totalStaked;
     uint256 public totalSupply;
@@ -59,12 +59,12 @@ contract WBTCStaking is Ownable, ReentrancyGuard, IWBTCStaking {
         uint256 cusum_ = cusum;
         
         if (totalStaked != 0) {
-           cusum_ += (_getAddedValue(block.timestamp, lastUpdate) * PRECISION) / 10**18;
+           cusum_ += (_getAddedValue(block.timestamp, lastUpdate) * MAX_PERCENTAGE) / 10**18;
         }
 
         return
             (userStake.staked * (cusum_ - userStake.cusum)) /
-            PRECISION +
+            MAX_PERCENTAGE +
             userStake.rewardAmount;
     }
 
@@ -80,7 +80,7 @@ contract WBTCStaking is Ownable, ReentrancyGuard, IWBTCStaking {
 
     function withdraw() external nonReentrant {
         uint256 addedValue = getAddedValue(_msgSender());
-        if (addedValue > 0) {
+        if (addedValue > 0 && addedValue <= totalSupply) {
             _claim(_msgSender(), addedValue);
         }
         
@@ -94,8 +94,8 @@ contract WBTCStaking is Ownable, ReentrancyGuard, IWBTCStaking {
     }
 
     function proposeRate(uint256 newRate_) external onlyOwner {
-        require(newRate_ <= PRECISION, GreaterThanMaxPercentageErr());
-        require(newRate_ >= MIN_PRECENTAGE, LowerThanMinPercentageErr());
+        require(newRate_ <= MAX_PERCENTAGE, GreaterThanMaxPercentageErr());
+        require(newRate_ >= MIN_PERCENTAGE, LowerThanMinPercentageErr());
         require(newRate_ != rate, SameRatesErr());
 
         proposedRate = newRate_;
@@ -132,7 +132,7 @@ contract WBTCStaking is Ownable, ReentrancyGuard, IWBTCStaking {
 
             userStake.rewardAmount +=
                 (userStake.staked * (cusum_ - userStake.cusum)) /
-                PRECISION;
+                MAX_PERCENTAGE;
             userStake.cusum = cusum_;
         }
 
@@ -160,13 +160,13 @@ contract WBTCStaking is Ownable, ReentrancyGuard, IWBTCStaking {
     function _claim(address user_, uint256 amount_  ) private {
         _updateCusum(user_);
 
-        uint256 toClaim = Math.min(totalSupply, amount_);
+        require(totalSupply >= amount_, SupplyNotEnoughErr());
 
-        userStakes[user_].rewardAmount -= toClaim;
-        totalSupply -= toClaim;
-        wbtc.safeTransfer(user_, toClaim);
+        userStakes[user_].rewardAmount -= amount_;
+        totalSupply -= amount_;
+        wbtc.safeTransfer(user_, amount_);
 
-        emit Claimed(toClaim, user_);
+        emit Claimed(amount_, user_);
     }
 
     function _getAddedValue(
