@@ -123,7 +123,7 @@ describe.only("WBTCStaking", () => {
 
         it("should revert if zero amount", async () => {
             await timeTravel(startTimestamp);
-            await expect(staking.stake(0n)).to.be.revertedWithCustomError(staking, "ZeroAmountErr");
+            await expect(staking.stake(0n)).to.be.revertedWithCustomError(staking, "MinAmountErr");
         });
     });
 
@@ -175,7 +175,7 @@ describe.only("WBTCStaking", () => {
            
             await staking.claim();            
            
-            expect(await wbtc.balanceOf(OWNER.address)).to.be.eq((firstAmount / 100n) + balanceBefore -1n); // -1n rounding
+            expect(await wbtc.balanceOf(OWNER.address)).to.be.eq((firstAmount / 100n) + balanceBefore -1n); // -1n rounding        
         })
 
         it("should correctly calculate if lastUpdate > endTimestamp", async () => {
@@ -261,7 +261,7 @@ describe.only("WBTCStaking", () => {
 
     describe("#proposeRate", () => {
         it("should propose rate", async () => {
-            const newRate = 80n * 10n ** 16n;
+            const newRate = 20n * 10n ** 16n;
 
             const time = (await ethers.provider.getBlock('latest')).timestamp;
             await staking.proposeRate(newRate);
@@ -287,7 +287,7 @@ describe.only("WBTCStaking", () => {
     });
 
     describe("#setRate", () => {
-        const newRate = 80n * 10n ** 16n;
+        const newRate = 20n * 10n ** 16n;
 
         beforeEach(async () => {
             await staking.proposeRate(newRate);

@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 
@@ -12,8 +13,11 @@ import "./interfaces/IWBTCStaking.sol";
 contract WBTCStaking is Ownable, ReentrancyGuard, IWBTCStaking {
     using SafeERC20 for IERC20;
 
-    uint256 public constant MAX_PERCENTAGE = 10 ** 18; // 100%
-    uint256 public constant MIN_PERCENTAGE = MAX_PERCENTAGE / 1000;
+    uint256 public constant RATE_DECIMAL = 10 ** 18; // 100%
+    uint256 public constant MAX_PERCENTAGE = RATE_DECIMAL * 20 / 100;
+    uint256 public constant MIN_PERCENTAGE = RATE_DECIMAL / 1000;
+
+    uint256 public immutable MIN_STAKE_AMOUNT;
 
     uint256 public totalStaked;
     uint256 public totalSupply;
@@ -49,6 +53,7 @@ contract WBTCStaking is Ownable, ReentrancyGuard, IWBTCStaking {
         startTimestamp = startTimestamp_;
         endTimestamp = endTimestamp_;
         wbtc = wbtc_;
+        MIN_STAKE_AMOUNT = 10 ** IERC20Metadata(address(wbtc_)).decimals() / 10_000;
 
         _setRate(rate_);
     }
@@ -59,12 +64,12 @@ contract WBTCStaking is Ownable, ReentrancyGuard, IWBTCStaking {
         uint256 cusum_ = cusum;
         
         if (totalStaked != 0) {
-           cusum_ += (_getAddedValue(block.timestamp, lastUpdate) * MAX_PERCENTAGE) / 10**18;
+           cusum_ += _getAddedValue(block.timestamp, lastUpdate);
         }
 
         return
             (userStake.staked * (cusum_ - userStake.cusum)) /
-            MAX_PERCENTAGE +
+            RATE_DECIMAL +
             userStake.rewardAmount;
     }
 
@@ -79,6 +84,8 @@ contract WBTCStaking is Ownable, ReentrancyGuard, IWBTCStaking {
     }
 
     function withdraw() external nonReentrant {
+        _updateCusum(_msgSender());
+        
         uint256 addedValue = getAddedValue(_msgSender());
         if (addedValue > 0 && addedValue <= totalSupply) {
             _claim(_msgSender(), addedValue);
@@ -87,7 +94,7 @@ contract WBTCStaking is Ownable, ReentrancyGuard, IWBTCStaking {
         uint256 userBalance = userStakes[_msgSender()].staked;
         require(userBalance > 0, NothingToWithdrawErr());
 
-        delete userStakes[_msgSender()];
+        userStakes[_msgSender()].staked = 0;
         totalStaked -= userBalance;
 
         wbtc.safeTransfer(_msgSender(), userBalance);
@@ -115,8 +122,9 @@ contract WBTCStaking is Ownable, ReentrancyGuard, IWBTCStaking {
     }
 
     function addSupply(uint256 amount_) external onlyOwner {
-        totalSupply += amount_;
+        uint256 balanceBefore = wbtc.balanceOf(address(this));
         wbtc.safeTransferFrom(_msgSender(), address(this), amount_);
+        totalSupply += wbtc.balanceOf(address(this)) - balanceBefore;
     }
 
     function _updateCusum(address user_) private {
@@ -132,7 +140,7 @@ contract WBTCStaking is Ownable, ReentrancyGuard, IWBTCStaking {
 
             userStake.rewardAmount +=
                 (userStake.staked * (cusum_ - userStake.cusum)) /
-                MAX_PERCENTAGE;
+                RATE_DECIMAL;
             userStake.cusum = cusum_;
         }
 
@@ -142,7 +150,7 @@ contract WBTCStaking is Ownable, ReentrancyGuard, IWBTCStaking {
 
     function _stake(address user_, uint256 amount_) private {
         require(user_ != address(0), ZeroAddressErr());
-        require(amount_ > 0, ZeroAmountErr());
+        require(amount_ >= MIN_STAKE_AMOUNT, MinAmountErr());
 
         _updateCusum(user_);
 

@@ -7,7 +7,7 @@ interface IWBTCStakingErrors {
     error StartTimestampInPastErr();
     error StartTimestampBiggerThanEndErr();
     error ZeroAddressErr();
-    error ZeroAmountErr();
+    error MinAmountErr();
     error NothingToClaimErr();
     error NothingToWithdrawErr();
     error SupplyNotEnoughErr();
